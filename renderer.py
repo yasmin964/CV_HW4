@@ -1,4 +1,3 @@
-# renderer.py
 import open3d as o3d
 import numpy as np
 import imageio
@@ -46,4 +45,4 @@ def render_frames(ply_path, trajectory_world, lookat_world, output_path, fps=30,
 
     writer.close()
     vis.destroy_window()
-    print("✅ Видео сохранено:", output_path)
+    print("Видео сохранено:", output_path)

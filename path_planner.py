@@ -1,14 +1,8 @@
-# path_planner.py
 import numpy as np
 from scipy.interpolate import CubicSpline
 from scipy.spatial import cKDTree
 
 def greedy_order_from_center(nodes):
-    """
-    nodes: list of (pos, lookat). Возвращает порядок индексов:
-    начинаем с точки, ближайшей к центру (т.к. lookat==center -> старт в центре)
-    затем жадный переход к ближайшему не посещённому.
-    """
     positions = np.array([p for p,_ in nodes])
     center = np.mean(positions, axis=0)
     # find start = closest to center
@@ -35,10 +29,6 @@ def nodes_positions(nodes, order=None):
         return positions[order]
 
 def smooth_path(positions, n_samples=300):
-    """
-    positions: (m,3)
-    Возвращает плавный путь из n_samples точек.
-    """
     if positions.shape[0] < 2:
         return positions
     t = np.linspace(0, 1, positions.shape[0])
@@ -48,16 +38,12 @@ def smooth_path(positions, n_samples=300):
     return pts
 
 def generate_trajectory(nodes, center, total_frames=30*60):
-    """
-    nodes: list of (pos, lookat)
-    total_frames: общее количество кадров (например, 1800 для 60с@30fps)
-    Возвращает: (positions, lookats) длины total_frames
-    """
     order = greedy_order_from_center(nodes)
     ordered_pos = nodes_positions(nodes, order)
-    # разбиваем total_frames пропорционально сегментам
     smoothed = smooth_path(ordered_pos, n_samples=total_frames)
-    # lookat — можно всегда смотреть на центр (nodes[0][1])
-    center = nodes[0][1]
-    lookats = np.tile(center[None, :], (smoothed.shape[0], 1))
+    lookats = np.zeros_like(smoothed)
+    for i in range(len(smoothed) - 1):
+        lookats[i] = smoothed[i + 1]
+    lookats[-1] = smoothed[-1]
+
     return smoothed, lookats
