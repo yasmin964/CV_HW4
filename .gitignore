@@ -1,0 +1,30 @@
+# Создайте/обновите .gitignore
+cat > .gitignore << 'EOF'
+# Large files
+*.ply
+*.pcd
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Output directories
+outputs/
+results/
+videos/
+
+# Data files
+*.zip
+*.tar
+*.gz
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+EOF
