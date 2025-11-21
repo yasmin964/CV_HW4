@@ -3,7 +3,6 @@ cat > .gitignore << 'EOF'
 # Large files
 *.ply
 *.pcd
-*.mp4
 *.avi
 *.mov
 *.mkv

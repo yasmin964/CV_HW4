@@ -1,8 +1,8 @@
-import os
+import json
 import numpy as np
 from explorer import navigate, load_ply, auto_fix_axes, detect_floor_plane, build_occupancy_grid
 from path_planner import generate_trajectory
-from renderer_spark import render_frames
+from renderer import render_frames
 
 def get_good_start_goal_from_free_space(ply_path):
     """Find actually free points by analyzing occupancy grid"""
@@ -65,8 +65,31 @@ def get_good_start_goal_from_free_space(ply_path):
 
     return start, goal
 
+
+def save_camera_trajectory_to_json(trajectory, lookat_points, output_path="panorama_path.json"):
+    """Save camera trajectory in X,Y,Z order for HTML/Three.js"""
+
+    camera_data = []
+
+    for pos, lookat in zip(trajectory, lookat_points):
+        pos_xyz = [pos[0], pos[2], pos[1]]  # X,Z,Y -> X,Y,Z
+        lookat_xyz = [lookat[0], lookat[2], lookat[1]]
+
+        camera_frame = {
+            "pos": pos_xyz,
+            "target": lookat_xyz,
+            "up": [0, -1, 0]
+        }
+        camera_data.append(camera_frame)
+
+    with open(output_path, 'w') as f:
+        json.dump(camera_data, f, indent=2)
+
+    print(f"Camera trajectory for HTML saved to: {output_path}")
+    print(f"Total frames: {len(camera_data)}")
+
 if __name__ == "__main__":
-    ply_path = r"ConferenceHall_uncompressed.ply"
+    ply_path = r"spark_viewer/ConferenceHall_uncompressed.ply"
     out_video = r"outputs/scene_1/spark_tour.mp4"
 
     start, goal = get_good_start_goal_from_free_space(ply_path)
@@ -91,6 +114,9 @@ if __name__ == "__main__":
         path_points=path3d,
         total_frames=30 * 60
     )
+
+    print("Saving camera trajectory to JSON...")
+    save_camera_trajectory_to_json(traj, lookats, "spark_viewer/camera_path.json")
 
     print("Starting distributed rendering with Spark...")
     render_frames(

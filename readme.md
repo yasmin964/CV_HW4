@@ -1,8 +1,10 @@
+
 ## Installation
 
 ### Requirements
 
 * Python 3.10
+* Modern web browser with WebGL support
 * Dependencies (can be installed via `requirements.txt`):
 
 ```text
@@ -42,7 +44,7 @@ sudo apt install ffmpeg  # Ubuntu
 
 ## Usage
 
-### 1. Run the main pipeline
+### 1. Generate Camera Path and Render Video
 
 ```bash
 python main.py
@@ -50,77 +52,99 @@ python main.py
 
 This will:
 
-1. Load the `.ply` point cloud.
-2. Detect the floor plane.
-3. Build an occupancy grid.
-4. Automatically select start and goal positions.
-5. Generate a smooth path using A* search.
-6. Smooth the path with spline interpolation.
-7. Render a cinematic video using either Spark distributed or sequential rendering.
+1. Load the `.ply` point cloud
+2. Detect the floor plane and analyze scene structure
+3. Build an occupancy grid and find optimal start/end points
+4. Generate a smooth path using A* search with obstacle avoidance
+5. Create smooth camera trajectory using spline interpolation
+6. **Save camera path** to `spark_viewer/camera_path.json`
+7. Render cinematic video using Spark distributed rendering
 
-### 2. Example Output
+### 2. Real-time WebGL Viewer
 
-* Input: `ConferenceHall_uncompressed.ply`
-* Output: `outputs/scene_1/spark_tour.mp4`
+Open `spark_viewer/index.html` 
+```bash
+ python3 -m http.server 8000
+```
 
-### 3. Custom Parameters
+in a modern web browser to:
 
-You can modify:
+- View the 3D scene in real-time using Gaussian Splatting
+- See the camera automatically follow the generated path
+- **Record a video** directly from the WebGL renderer (automatically starts)
+- Download the recorded tour as MP4/WebM video
 
-* Video resolution: `resolution=(1280, 720)`
-* Frames per second: `fps=30`
-* Enable/disable Spark distributed rendering: `use_spark=True/False`
-* Camera flip or permutation: `flip_camera=True/False`, `perm=(0,1,2)`
+## Output Files
+
+- **`spark_viewer/camera_path.json`**: Camera trajectory for WebGL viewer
+- **`outputs/scene_1/spark_tour.mp4`**: High-quality rendered video (Python)
+- **`outputs/scene_1/camera_tour.mp4/`**: Browser-recorded video (WebGL)
+
+## Key Features
+
+### Dual Rendering System
+
+1. **Python/Spark Rendering** (`main.py` + `renderer.py`)
+   - High-quality video output
+   - Distributed rendering with Apache Spark
+   - Collision-free path planning
+   - Professional video encoding
+
+2. **WebGL Real-time Viewer** (`spark_viewer/index.html`)
+   - Real-time Gaussian Splatting rendering
+   - Built-in video recording
+   - Optimized performance (30 FPS cap, memory management)
+   - Direct browser download
+
+### Smart Path Planning
+
+- **Automatic start/end point selection** in largest free space area
+- **Obstacle avoidance** using occupancy grid analysis
+- **Smooth trajectories** with cubic spline interpolation
+- **Cinematic camera movement** with look-ahead targeting
+
+### Performance Optimizations
+
+- **Spark distributed rendering** for faster video generation
+- **WebGL optimizations**: limited splat count, disabled antialiasing
+- **Smart FPS control** to maintain smooth recording
+- **Memory management** with automatic cleanup
 
 ---
 
 ## Algorithm Descriptions
 
-### Floor Detection
+### Scene Analysis (`explorer.py`)
 
-* Uses RANSAC plane fitting to detect the horizontal floor.
-* Validates horizontal alignment via the normal vector.
+- **Floor Detection**: RANSAC plane fitting to detect horizontal surfaces
+- **Occupancy Grid**: 2D grid mapping with obstacle detection
+- **Free Space Analysis**: Connected component analysis to find navigable areas
 
-### Occupancy Grid
+### Path Planning (`path_planner.py`)
 
-* Converts 3D points into a 2D grid.
-* Marks free and blocked cells based on floor support and obstacle height thresholds.
-* Optional morphological operations smooth the walkable area.
+- **A* Search**: Optimal path finding on occupancy grid
+- **Path Pruning**: Remove redundant waypoints
+- **Spline Smoothing**: Cubic spline interpolation for smooth camera motion
+- **Look-ahead Targeting**: Camera naturally follows path direction
 
-### Path Planning
+### Rendering Systems 
 
-* **A* search**: finds an initial 2D path on the occupancy grid.
-* **Path pruning**: removes redundant intermediate points.
-* **Smoothing**: Laplacian smoothing followed by cubic spline interpolation in 3D space.
+#### Python/Spark Rendering (`renderer.py`)
+- **Distributed Processing**: Parallel frame rendering across multiple cores
+- **High Quality**: 1280×720 resolution, professional encoding
+- **Collision Detection**: Camera stays within navigable space
 
-### Camera Trajectory
-
-* Generates smooth camera positions and look-at points.
-* Uses cubic spline interpolation along the path.
-* Look-at points are slightly ahead along the path for cinematic effect.
-
-### Rendering
-
-* Sequential rendering using Open3D.
-* Optional distributed rendering using Apache Spark.
-* Video is encoded in MP4 (`libx264`) with high-quality settings.
-
----
-
-## Dependencies and Requirements
-
-* **Python**: 3.10
-* **Libraries**: `open3d`, `numpy`, `ImageIO`, `scipy`, `tqdm`, `imageio-ffmpeg`, `pyspark`
-* **System**: `ffmpeg` installed for MP4 video creation
-* **Optional**: Apache Spark for distributed rendering
+#### WebGL Real-time Rendering (`index.html`)
+- **Gaussian Splatting**: Real-time 3D point cloud rendering
+- **Automated Recording**: Built-in MediaRecorder API
+- **Performance Optimized**: 30 FPS target, memory efficient
 
 ---
 
 ## Known Limitations
 
-1. Floor plane detection assumes a mostly horizontal floor. Sloped floors may fail detection.
-2. Path planning is 2D-based; multilevel navigation is not supported.
-3. Memory usage may grow for very large point clouds.
-4. Spark distributed rendering requires proper configuration and may fallback to sequential rendering if Spark fails.
-5. Camera collision avoidance with 3D obstacles is limited to vertical clearance checks.
-6. Currently, the pipeline supports `.ply` point clouds only.
+1. **WebGL Recording**: Browser recording may have lower quality than Python rendering
+2. **Memory Usage**: Large point clouds may impact browser performance
+3. **Floor Detection**: Assumes mostly horizontal floor surfaces
+4. **Browser Support**: Requires modern browser with MediaRecorder API
+5. **Spark Setup**: Distributed rendering requires proper Spark configuration

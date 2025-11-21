@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Museum Panorama Tour</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        height: 100%;
+        background: #000;
+      }
+
+      #loading {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        padding: 6px 10px;
+        background: rgba(0, 0, 0, 0.7);
+        color: #fff;
+        font-family: system-ui, sans-serif;
+        font-size: 12px;
+        border-radius: 4px;
+        z-index: 10;
+      }
+
+      #debug {
+        position: fixed;
+        bottom: 10px;
+        left: 10px;
+        padding: 6px 10px;
+        background: rgba(0, 0, 0, 0.5);
+        color: #0f0;
+        font-family: system-ui, sans-serif;
+        font-size: 11px;
+        border-radius: 4px;
+        z-index: 10;
+        max-width: 60%;
+        white-space: pre-wrap;
+      }
+
+      canvas {
+        display: block;
+      }
+    </style>
+
+    <!-- Spark + Three import map -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.178.0/three.module.js",
+          "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/0.1.10/spark.module.js"
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <div id="loading">Loading splat & path...</div>
+    <div id="debug"></div>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { SplatMesh } from "@sparkjsdev/spark";
+
+      const loadingEl = document.getElementById("loading");
+      const debugEl = document.getElementById("debug");
+
+      function setDebug(text) {
+        debugEl.textContent = text;
+      }
+
+      // ---------- basic THREE setup ----------
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x000000);
+
+      const fov = 70;
+      const near = 0.01;
+      const far = 1000;
+      const camera = new THREE.PerspectiveCamera(
+        fov,
+        window.innerWidth / window.innerHeight,
+        near,
+        far
+      );
+
+      // 👇 ОТКЛЮЧЕН АНТИАЛИАСИНГ ДЛЯ СКОРОСТИ
+      const renderer = new THREE.WebGLRenderer({
+        antialias: false,
+        powerPreference: "high-performance"
+      });
+      // slightly reduced resolution for speed
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // ---------- load Gaussian Splat PLY ----------
+      const splatURL = "./ConferenceHall_uncompressed.ply";
+      const splat = new SplatMesh({
+          url: splatURL,
+          performance: "dynamic",
+          maxSplats: 50000, // 👇 УМЕНЬШЕНО ДЛЯ ПРОИЗВОДИТЕЛЬНОСТИ
+          pointSize: 0.5,
+      });
+      scene.add(splat);
+
+      // ---------- camera path & timing ----------
+      let path = [];
+      let frameIndex = 0;
+
+      // how long one full loop of the path should take (in seconds)
+      const TOUR_SECONDS = 90; // adjust: 60–120 for assignment
+
+      let tourStartTime = null; // set when path finishes loading
+
+      function applyPose(p) {
+        const [px, py, pz] = p.pos;
+        const [tx, ty, tz] = p.target;
+
+        camera.position.set(px, py, pz);
+
+        // Fix upside-down view (this is what worked for you)
+        camera.up.set(0, -1, 0);
+
+        camera.lookAt(tx, ty, tz);
+      }
+
+      function initCameraFromFirstPose() {
+        if (!path.length) return;
+        applyPose(path[0]);
+      }
+
+      // ---------- Recording setup ----------
+      const STREAM_FPS = 30;         // stream FPS for captureStream
+      const RECORD_SECONDS = 90;     // recording duration = one loop
+
+      let mediaRecorder = null;
+      let recordedChunks = [];
+      let recordingStarted = false;
+
+      // 👇 ФУНКЦИЯ ОЧИСТКИ ПАМЯТИ
+      function cleanup() {
+        if (splat) {
+          scene.remove(splat);
+          splat.dispose();
+        }
+        renderer.dispose();
+      }
+
+      function startRecording() {
+        if (recordingStarted) return;
+        recordingStarted = true;
+
+        const stream = renderer.domElement.captureStream(STREAM_FPS);
+
+        // Попробуйте разные MIME-типы для MP4
+        const mimeTypes = [
+          'video/mp4; codecs="avc1.42E01E"',
+          'video/mp4; codecs="avc1.428028"',
+          'video/mp4',
+          "video/webm" // 👇 WebM обычно быстрее
+        ];
+
+        let supportedType = null;
+        for (const type of mimeTypes) {
+          if (MediaRecorder.isTypeSupported(type)) {
+            supportedType = type;
+            console.log("Using MIME type:", type);
+            break;
+          }
+        }
+
+        if (!supportedType) {
+          console.warn("No supported MIME type found, using default");
+          supportedType = "video/webm";
+        }
+
+        // 👇 НИЖЕЕ КАЧЕСТВО ДЛЯ ПЛАВНОСТИ
+        mediaRecorder = new MediaRecorder(stream, {
+          mimeType: supportedType,
+          videoBitsPerSecond: 2000000 // 👇 2 Mbps вместо 5 (МЕНЬШЕ НАГРУЗКИ)
+        });
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            recordedChunks.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          // 👇 ОЧИСТКА ПАМЯТИ ПОСЛЕ ЗАПИСИ
+          setTimeout(cleanup, 1000);
+
+          // Определяем расширение файла по MIME-типу
+          const extension = supportedType.includes('mp4') ? 'mp4' : 'webm';
+          const mimeType = supportedType.includes('mp4') ? 'video/mp4' : 'video/webm';
+
+          const blob = new Blob(recordedChunks, { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `camera_tour.${extension}`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          loadingEl.textContent = `Recording finished – ${extension.toUpperCase()} video downloaded`;
+        };
+
+        // 👇 БОЛЬШИЕ ЧАНКИ - МЕНЬШЕ ОБРАБОТКИ
+        mediaRecorder.start(1000); // 1 секунда чанки
+        loadingEl.textContent = "Recording…";
+
+        // stop automatically after RECORD_SECONDS
+        setTimeout(() => {
+          if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+          }
+        }, RECORD_SECONDS * 1000);
+      }
+
+      // ---------- Load path and start tour ----------
+      fetch("./camera_path.json")
+        .then((r) => r.json())
+        .then((data) => {
+          if (!Array.isArray(data)) {
+            throw new Error("camera_path.json is not an array");
+          }
+          path = data;
+          console.log("Loaded path with", path.length, "poses");
+          loadingEl.textContent = "Loaded – starting tour";
+
+          if (path.length === 0) {
+            loadingEl.textContent = "Path is EMPTY (0 poses)";
+            return;
+          }
+
+          initCameraFromFirstPose();
+          tourStartTime = performance.now() / 1000; // seconds
+
+          // small delay to let first frame render, then start recording
+          setTimeout(() => {
+            startRecording();
+          }, 500);
+        })
+        .catch((err) => {
+          console.error("Failed to load path:", err);
+          loadingEl.textContent = "Failed to load path :(";
+        });
+
+      // ---------- resize handling ----------
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      // ---------- ОПТИМИЗИРОВАННАЯ ФУНКЦИЯ АНИМАЦИИ ----------
+      let frameCount = 0;
+      let lastFrameTime = performance.now();
+      let isRendering = true;
+
+      function animate() {
+        if (!isRendering) return;
+
+        requestAnimationFrame(animate);
+
+        // 👇 ПРОПУСК КАДРОВ ПРИ ВЫСОКОЙ НАГРУЗКЕ
+        const currentTime = performance.now();
+        const deltaTime = currentTime - lastFrameTime;
+
+        // 👇 ОГРАНИЧЕНИЕ FPS чтобы снизить нагрузку (~30 FPS)
+        if (deltaTime < 33) {
+          return;
+        }
+
+        lastFrameTime = currentTime;
+        frameCount++;
+
+        if (path.length > 0 && tourStartTime !== null) {
+          const now = performance.now() / 1000;
+          const elapsed = now - tourStartTime;
+          const t = ((elapsed % TOUR_SECONDS) / TOUR_SECONDS);
+          const idx = Math.floor(t * path.length) % path.length;
+          frameIndex = idx;
+
+          const p = path[idx];
+          applyPose(p);
+
+          // 👇 РЕДКИЕ ОБНОВЛЕНИЯ ДЕБАГА для экономии CPU
+          if (frameCount % 60 === 0) {
+            setDebug(
+              `poses: ${path.length} | frame: ${idx}/${path.length - 1}\n` +
+              `pos: ${p.pos.map(v => v.toFixed(1)).join(", ")}`
+            );
+          }
+        } else {
+          if (frameCount % 120 === 0) {
+            setDebug("No path loaded yet…");
+          }
+        }
+
+        renderer.render(scene, camera);
+      }
+
+      animate();
+    </script>
+  </body>
+</html>

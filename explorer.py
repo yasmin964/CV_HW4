@@ -32,13 +32,13 @@ def detect_floor_plane(pcd, distance_thresh=0.03):
 def build_occupancy_grid(
     pcd,
     floor_z,
-    res=0.05,
+    res=0.04,
     person_height=1.0,
     floor_band=0.1,
-    clearance_band=0.2,
+    clearance_band=0.3,
     floor_threshold=1,
-    obstacle_threshold=50,
-    smooth_iters=1
+    obstacle_threshold=20,
+    smooth_iters=3
 ):
     pts = np.asarray(pcd.points)
 
@@ -146,7 +146,7 @@ def astar(grid, start, goal):
 
             base_cost = np.sqrt(dx**2 + dy**2)
 
-            wall_penalty = 2.0 / (dist[nx, ny] + 1e-3)
+            wall_penalty = 5.0 / (dist[nx, ny] + 1e-3)
 
             new_cost = cost[cur] + base_cost + wall_penalty
 
